@@ -279,7 +279,33 @@ FinDePartie testFin( Etat * etat ) {
 	return NON;
 }
 
+float bValue(Noeud* i, int max){
+    float mu = (i->nb_victoires+.0f)/i->nb_simus;
+    if(!max) mu = -mu;
+    return mu + C * sqrt(log(i->parent->nb_enfants)/i->nb_enfants);
+}
 
+Noeud * selectMCTS(Noeud* current, int max ){
+
+    if (testFin(current->etat))
+        return current;
+
+    for (int i = 0; i < current->nb_enfants; ++i) {
+        if (current->enfants[i]->nb_simus == 0)
+            return current->enfants[i];
+    }
+
+    Noeud* selected = current->enfants[0];
+    int bmax = bValue(selected, max);
+    for (int i = 1; i < current->nb_enfants; ++i) {
+        int tmpBValue = bValue(current->enfants[i], max);
+        if(bmax < tmpBValue){
+            bmax = tmpBValue;
+            selected = current->enfants[i];
+        }
+    }
+    selectMCTS(selected, !max);
+}
 
 // Calcule et joue un coup de l'ordinateur avec MCTS-UCT
 // en tempsmax secondes
@@ -313,18 +339,73 @@ void ordijoue_mcts(Etat * etat, int tempsmax) {
     */
 
 	int iter = 0;
-	
-	do {
+	Noeud * current;
 
-        //selectMCTS(racine);
+	do {
+        //select
+        current = selectMCTS(racine, racine->joueur);
+
+        //development
+        if (!testFin(current->etat)){
+            if(current->nb_enfants == 0){
+                coups = coups_possibles(current->etat);
+                int k = 0;
+                while ( coups[k] != NULL) {
+                    ajouterEnfant(current, coups[k]);
+                    k++;
+                }
+            }
+
+            int idxInexplo[current->nb_enfants];
+            int k = 0;
+            for (int i = 0; i < current->nb_enfants; ++i) {
+                if (current->enfants[i]->nb_simus == 0) {
+                    idxInexplo[k] = i;
+                    k++;
+                }
+            }
+            current = current->enfants[idxInexplo[rand()%k]];
+        }
+
+        //simulate
+        FinDePartie etatPartie = testFin(current->etat);
+        while(!etatPartie){
+            coups = coups_possibles(current->etat);
+            int k = 0;
+            while ( coups[k] != NULL) {
+                ajouterEnfant(current, coups[k]);
+                k++;
+            }
+            int idx = rand()%k;
+            current = current->enfants[idx];
+            etatPartie = testFin(current->etat);
+        }
+
+        int r = etatPartie == ORDI_GAGNE ? 1 : 0; //perdu par default
+        current->nb_victoires += r;
+
+        //mise à jour
+        Noeud* parent = current->parent;
+        while (parent != NULL){
+            parent->nb_simus++;
+            parent->nb_victoires += r;
+            parent = parent->parent;
+        }
 	
 		toc = clock(); 
 		temps = (int)( ((double) (toc - tic)) / CLOCKS_PER_SEC );
 		iter ++;
 	} while ( temps < tempsmax );
-	
+
+    float mu = 0;
+    for (int i = 0; i < racine->nb_enfants; ++i) {
+        float tmpMu = (racine->enfants[i]->nb_victoires+.0f)/racine->enfants[i]->nb_simus;
+        if(mu < tmpMu) {
+            meilleur_coup = racine->enfants[i]->coup;
+            mu = tmpMu;
+        }
+    }
 	/* fin de l'algorithme  */ 
-	
 	// Jouer le meilleur premier coup
 	jouerCoup(etat, meilleur_coup );
 	
@@ -332,11 +413,6 @@ void ordijoue_mcts(Etat * etat, int tempsmax) {
 	freeNoeud(racine);
 	free (coups);
 }
-
-//Noeud * selectMCTS(Noeud* current){
-
-
-//}
 
 int main(void) {
 
